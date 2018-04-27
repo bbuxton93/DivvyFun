@@ -1,0 +1,98 @@
+---
+title: "Divvy Fun"
+output:
+  html_document:
+    df_print: paged
+---
+Goal here is to do some geographic mapping of divvy routes using their data. Using all of 2017 data and Q3/Q4 routes. Found here:
+https://www.divvybikes.com/system-data
+
+You will see that there's way too much data for me to run all routes and it will be reflected in the code
+
+Step 1: load data and packages 
+```{r}
+#install what you need and load (for now). I don't think I use all of these packages but just load them - no ones gonna care! I don't remember where i pulled this snippit from! 
+
+
+library(dplyr)
+require(maps)
+require(ggmap)
+library(raster)
+library(sp)
+library(maptools)
+library(lubridate)
+gpclibPermit()
+library(maptools)
+library(mapdata)
+library(ggmap)
+library(geosphere)
+library(maps)
+library(ggplot2)
+
+
+
+#pulling in the data - you'll need to useyour own file paths below. Could I do this all in 1 line? Probably.
+div_stationQ3Q4 = read.csv("C:\\Users\\Brian\\Downloads\\Divvy_Trips_2017_Q3Q4\\Divvy_Stations_2017_Q3Q4.csv", header = TRUE)
+div_tripsQ4 = read.csv("C:\\Users\\Brian\\Downloads\\Divvy_Trips_2017_Q3Q4\\Divvy_Trips_2017_Q4.csv", header = TRUE)
+div_tripsQ3 = read.csv("C:\\Users\\Brian\\Downloads\\Divvy_Trips_2017_Q3Q4\\Divvy_Trips_2017_Q3.csv", header = TRUE)
+div_tripsQ2 = read.csv("C:\\Users\\Brian\\Downloads\\Divvy_Trips_2017_Q1Q2\\Divvy_Trips_2017_Q2.csv", header = TRUE)
+div_tripsQ1 = read.csv("C:\\Users\\Brian\\Downloads\\Divvy_Trips_2017_Q1Q2\\Divvy_Trips_2017_Q1.csv", header = TRUE)
+
+```
+
+Step 2: Transform the dang data cause it's never how you want it and it never will be so dplyr your way through life.
+
+```{r}
+#taking the quarterly data, adding a column to announce it, making it into one file and exporting.
+#why? well I thought I could plot it all at once and my cowworkers wanted the tranformed single yearly dataset
+
+Q1<-div_tripsQ1 %>% mutate(Quarter="Q1")
+Q2<-div_tripsQ2 %>% mutate(Quarter="Q2")
+Q3<-div_tripsQ3 %>% mutate(Quarter="Q3")
+Q4<-div_tripsQ4 %>% mutate(Quarter="Q4")
+
+Final<-bind_rows(Q1,Q2,Q3,Q4)
+##write.csv(Final, file = "final_2017.csv")
+
+#always check out your tables. Final lol - its never final
+
+#joining the stations and trip info with the from_station_id form the trips data and the id from the stations
+
+Q4_2017_coord <- dplyr::left_join(div_tripsQ4, div_stationQ3Q4,c('from_station_id'='id'))
+
+#dropping the useless stuff and renaming to it make a little bit of sense
+Q4<-Q4_2017_coord %>% dplyr::select(-c(city,name,X))
+names(Q4)[names(Q4) == 'latitude'] <- 'from_lat'
+names(Q4)[names(Q4) == 'longitude'] <- 'from_lon'
+names(Q4)[names(Q4) == 'dpcapacity'] <- 'from_dpcap'
+
+#joining the to_station_ids to station id's like before and renaming
+Q4_2017_coord <- dplyr::left_join(Q4, div_stationQ3Q4,c('to_station_id'='id'))
+Q4final<-Q4_2017_coord %>% select(-c(city,name,X))
+names(Q4final)[names(Q4final) == 'latitude'] <- 'to_lat'
+names(Q4final)[names(Q4final) == 'longitude'] <- 'to_lon'
+names(Q4final)[names(Q4final) == 'dpcapacity'] <- 'to_dpcap'
+head(Final)
+```
+
+Step 3: build the maps! Now I have to 
+
+a. create a goodlooking map -google maps are pretty!
+
+b. plot the stations - I want to know the relative sizes of stations too
+
+c. map the routes from station to station for a quarter, or a random sample of 10,000 rows because I did this last minute and have a real job with real responsibilties and this is all just for fun.
+
+```{r}
+#building our map of Chicago. Centering it on the mean of my longitude and latitude of divvy stations
+#i know - clever!
+
+map_of_Chicago <- get_map(location = c(lon = mean(div_stationQ3Q4$longitude), lat = mean(div_stationQ3Q4$latitude)), zoom = 12, maptype = "roadmap", scale = 2) 
+
+#overlaying a bunch of crap
+#Geom_segment are the trip coordinates mapped - only using 10,000 datapoints because my PC is a potato
+#geom_point are the stations - the size of the points are based on the number of bike ports available
+map<-ggmap(map_of_Chicago)+ geom_segment(aes(x = from_lon , y = from_lat, xend = to_lon, yend = to_lat, colour = "segment", alpha=0.1), data =sample_n(Q4final,10000,replace=TRUE))+ geom_point(data = div_stationQ3Q4, aes(x = longitude, y = latitude, fill = "red", alpha = 0.8), size = div_stationQ3Q4$dpcapacity/14, shape = 21) + guides(fill=FALSE, alpha=FALSE, size=FALSE)
+
+```
+
